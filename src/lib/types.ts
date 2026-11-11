@@ -1,3 +1,4 @@
+import type { Txt } from "./i18n";
 // Core domain types for GovFlow. Everything persisted is plain JSON so it can live in
 // Firestore or the in-memory store unchanged.
 
@@ -50,9 +51,9 @@ export interface Citation {
 
 export interface RuleResult {
   id: string;
-  title: string;
+  title: Txt;
   result: "pass" | "fail" | "unknown";
-  detail: string;
+  detail: Txt;
   citation: Citation;
 }
 
@@ -107,7 +108,7 @@ export interface CaseRecord {
   llmFilledFields?: string[];
   rules?: RuleResult[];
   decisions?: Record<string, DecisionRecord>;
-  issues?: string[];
+  issues?: Txt[];
   suggestedAmount?: number;
   summary?: string;
   idempotencyKey: string;
@@ -128,8 +129,8 @@ export interface AgentEvent {
   actor: "agent" | "human" | "system";
   tool?: string;
   step?: string; // workflow step id
-  title: string;
-  detail?: string;
+  title: Txt;
+  detail?: Txt;
   status: EventStatus;
   durationMs?: number;
   data?: unknown;
@@ -143,12 +144,12 @@ export interface ReviewTask {
   id: string;
   caseId: string;
   kind: TaskKind;
-  title: string;
-  issue: string;
-  evidence: { label: string; value: string }[];
+  title: Txt;
+  issue: Txt;
+  evidence: { label: Txt; value: Txt }[];
   citations: Citation[];
-  recommendation: string;
-  draft?: string;
+  recommendation: Txt;
+  draft?: Txt;
   draftSource?: "llm" | "template";
   status: "pending" | "approved" | "changes_requested";
   decisionNote?: string;
@@ -163,7 +164,7 @@ export interface ThreadMessage {
   updatedAt: number;
   role: "agent" | "user";
   kind: "proactive" | "chat" | "notice";
-  text: string;
+  text: Txt;
   runId?: string;
   caseIds?: string[];
   taskIds?: string[];

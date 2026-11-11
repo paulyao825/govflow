@@ -1,6 +1,6 @@
 "use client";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { DEFAULT_LANG, type Lang } from "@/lib/i18n";
+import { DEFAULT_LANG, pick, type Lang, type Txt } from "@/lib/i18n";
 
 // Viewer preferences: language (English default) and theme. Stored per browser.
 type Theme = "light" | "dark";
@@ -10,12 +10,14 @@ interface Prefs {
   setLang: (l: Lang) => void;
   setTheme: (t: Theme) => void;
   t: (zh: string, en: string) => string;
+  /** render stored bilingual text in the current language */
+  tx: (v: Txt | undefined | null) => string;
 }
 
 let currentLang: Lang = DEFAULT_LANG;
 export const getLang = () => currentLang;
 
-const Ctx = createContext<Prefs>({ lang: DEFAULT_LANG, theme: "light", setLang: () => {}, setTheme: () => {}, t: (_zh, en) => en });
+const Ctx = createContext<Prefs>({ lang: DEFAULT_LANG, theme: "light", setLang: () => {}, setTheme: () => {}, t: (_zh, en) => en, tx: (v) => pick(v, DEFAULT_LANG) });
 export const usePrefs = () => useContext(Ctx);
 
 const read = (k: string) => {
@@ -61,8 +63,9 @@ export function PrefsProvider({ children }: { children: React.ReactNode }) {
     document.documentElement.classList.toggle("dark", t === "dark");
   }, []);
   const t = useCallback((zh: string, en: string) => (lang === "zh" ? zh : en), [lang]);
+  const tx = useCallback((v: Txt | undefined | null) => pick(v, lang), [lang]);
 
-  return <Ctx.Provider value={{ lang, theme, setLang, setTheme, t }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ lang, theme, setLang, setTheme, t, tx }}>{children}</Ctx.Provider>;
 }
 
 /** Runs before paint to avoid a light flash for dark-mode users. */

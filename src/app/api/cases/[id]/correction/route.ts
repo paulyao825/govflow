@@ -11,7 +11,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const { lang: l } = await req.json().catch(() => ({}));
     const lang = asLang(l);
     const ok = await receiveCorrection(id, undefined, lang);
-    if (ok) after(() => processInBackground(id, lang === "zh" ? "事件觸發：申請人補件到達" : "Event: applicant correction arrived", lang));
+    if (ok) after(() => processInBackground(id, { zh: "事件觸發：申請人補件到達", en: "Event: applicant correction arrived" }, lang));
     return Response.json({ ok });
   } catch (e) {
     return Response.json({ error: String(e) }, { status: 400 });

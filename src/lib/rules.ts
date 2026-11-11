@@ -48,7 +48,8 @@ export function extractFacts(docs: CaseDocument[]): CaseFacts {
     const billing: "monthly" | "annual" | undefined = /年繳|年訂閱|annual/i.test(t) ? "annual" : /月繳|月訂閱|monthly/i.test(t) ? "monthly" : undefined;
     const start = s ?? date(kv(t, "訂閱日期"));
     return {
-      name: (kv(t, "方案") ?? toolLine.split("｜")[0] ?? "").trim(),
+      // short canonical name ("ChatGPT Plus"), the full plan text stays in `plan`
+      name: (kv(t, "方案") ?? toolLine.split("｜")[0] ?? "").replace(/[（(].*$/, "").trim(),
       plan: [kv(t, "方案"), kv(t, "家庭共用") ? `家庭共用：${kv(t, "家庭共用")}` : undefined].filter(Boolean).join("；"),
       billing,
       cycleStart: start,
@@ -130,7 +131,7 @@ export function evaluateRules(f: CaseFacts, docs: CaseDocument[], lang: Lang = "
 
   // 學籍
   const stu = byType(docs, "student_status")[0]?.text ?? "";
-  add({ id: "student", title: t_("大專院校學籍或 115 年度應屆畢業", "Enrolled student or 2026 graduate"), result: /在學|115年|中華民國115/.test(stu) ? "pass" : "unknown", detail: stu ? stu.split("\n")[0] : t_("未提供", "Not provided"), citation: CITES.student });
+  add({ id: "student", title: t_("大專院校學籍或 115 年度應屆畢業", "Enrolled student or 2026 graduate"), result: /在學|115年|中華民國115/.test(stu) ? "pass" : "unknown", detail: stu ? t_(stu.split("\n")[0], /畢業/.test(stu) ? "Graduation certificate on file" : "Enrolment certificate on file") : t_("未提供", "Not provided"), citation: CITES.student });
 
   // 課程
   const courseTitle = t_("AI 相關課程修習證明", "Proof of an AI-related course");
@@ -160,7 +161,7 @@ export function evaluateRules(f: CaseFacts, docs: CaseDocument[], lang: Lang = "
       id: `personal_${t.source}`,
       title: t_(`${name}：個人使用版本`, `${name}: personal plan`),
       result: shared ? "unknown" : personal ? "pass" : "unknown",
-      detail: shared ? t_(`收據顯示「${t.plan}」，是否屬多人共用版本需判斷`, `Receipt shows "${t.plan}" — whether this counts as a shared plan needs judgment`) : personal ? t_("收據標示個人方案", "Receipt says individual plan") : t_("收據未標示方案類型", "Plan type not stated"),
+      detail: shared ? t_(`收據顯示「${t.plan}」，是否屬多人共用版本需判斷`, "Receipt mentions family sharing / multi-user use — needs judgment on whether this counts as a shared plan") : personal ? t_("收據標示個人方案", "Receipt says individual plan") : t_("收據未標示方案類型", "Plan type not stated"),
       citation: CITES.personal,
     });
     add({ id: `purchaser_${t.source}`, title: t_(`${name}：購買人為申請人本人`, `${name}: purchased by the applicant`), result: t.purchaser && t.purchaser === f.applicantName ? "pass" : "unknown", detail: t_(`購買人：${t.purchaser ?? "未載明"}`, `Purchaser: ${t.purchaser ?? "not stated"}`), citation: CITES.purchaser });

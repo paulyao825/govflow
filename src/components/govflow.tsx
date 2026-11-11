@@ -211,14 +211,13 @@ function caseStatus(t: (zh: string, en: string) => string): Record<CaseRecord["s
   };
 }
 
-function DemoMenu({ meta, cases }: { meta: Meta | null; cases: CaseRecord[] }) {
+function DemoMenu({ meta }: { meta: Meta | null; cases: CaseRecord[] }) {
   const { t } = usePrefs();
   const [open, setOpen] = useState(false);
   const act = async (url: string, body?: unknown) => {
     setOpen(false);
     await post(url, body);
   };
-  const hasCorr = (id: string) => cases.find((c) => c.id === id && c.status === "awaiting_correction");
   return (
     <div className="relative">
       <button onClick={() => setOpen((o) => !o)} className="grid h-8 w-8 place-items-center rounded-lg text-ink-2 hover:bg-line-2" aria-label={t("展示控制", "Demo controls")}>
@@ -235,17 +234,13 @@ function DemoMenu({ meta, cases }: { meta: Meta | null; cases: CaseRecord[] }) {
               ["A", t("A-001 缺 AI 課程證明", "A-001 missing AI course proof")],
               ["B", t("B-002 文件齊全", "B-002 complete")],
               ["C", t("C-003 日期／方案矛盾", "C-003 conflicting dates / plan")],
-              ["D", t("D-004 掃描不清＋指令注入", "D-004 blurry scan + prompt injection")],
             ].map(([k, l]) => (
               <MenuItem key={k} onClick={() => act("/api/intake", { scenario: k })}>
                 {t("單件進件：", "Single arrival: ")}
                 {l}
               </MenuItem>
             ))}
-            <MenuItem onClick={() => act("/api/intake", { scenario: "A" })}>{t("重複送出 A-001（測試不重複處理）", "Resend A-001 (dedupe test)")}</MenuItem>
-            <div className="my-1 h-px bg-line-2" />
-            <MenuItem disabled={!hasCorr("A-001")} onClick={() => act("/api/cases/A-001/correction")}>{t("申請人補件到達：A-001", "Applicant correction arrives: A-001")}</MenuItem>
-            <MenuItem disabled={!hasCorr("D-004")} onClick={() => act("/api/cases/D-004/correction")}>{t("申請人補件到達：D-004", "Applicant correction arrives: D-004")}</MenuItem>
+            <div className="px-2.5 pb-1 pt-2 text-[12px] text-ink-3">{t("上傳自己的文件：按輸入框的 📎 或直接拖進畫面。", "Your own files: click 📎 in the composer or drag them onto the page.")}</div>
             <div className="mt-1.5 space-y-1 border-t border-line-2 px-2.5 pb-1.5 pt-2 text-[11.5px] text-ink-3">
               <div>{t("判斷模型：", "Decisions: ")}{meta ? (meta.jev === "jev" ? t("TypeSafe Jev（即時推論）", "TypeSafe Jev (live)") : t("模擬判斷（未設定 Jev 金鑰）", "Simulator (no Jev key)")) : "…"}</div>
               <div>{t("撰稿／對話：", "Drafting / chat: ")}{meta ? (meta.llm === "openai" ? `OpenAI ${meta.llmModel}` : t("範本與規則式解析", "Templates + rule-based")) : "…"}</div>
@@ -284,12 +279,12 @@ function EmptyState() {
 /* --------------------------------- messages -------------------------------- */
 
 function MessageView({ m, tasksById, casesById, outbox }: { m: ThreadMessage; tasksById: Record<string, ReviewTask>; casesById: Record<string, CaseRecord>; outbox: { caseId: string }[] }) {
-  const { t } = usePrefs();
+  const { t, tx } = usePrefs();
   const time = useTime();
   if (m.role === "user")
     return (
       <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="flex justify-end">
-        <div className="max-w-[75%] rounded-2xl rounded-br-md bg-ink px-4 py-2.5 text-[15.5px] leading-relaxed text-paper">{m.text}</div>
+        <div className="max-w-[75%] rounded-2xl rounded-br-md bg-ink px-4 py-2.5 text-[15.5px] leading-relaxed text-paper">{tx(m.text)}</div>
       </motion.div>
     );
   const tasks = (m.taskIds ?? []).map((id) => tasksById[id]).filter(Boolean);
@@ -306,7 +301,7 @@ function MessageView({ m, tasksById, casesById, outbox }: { m: ThreadMessage; ta
           <span>{time(m.ts)}</span>
           {m.llm === "fallback" && <span className="rounded bg-line-2 px-1.5 py-px">{t("規則式回覆", "Rule-based")}</span>}
         </div>
-        <div className="whitespace-pre-wrap text-[16px] leading-[1.7] text-ink">{m.text}</div>
+        <div className="whitespace-pre-wrap text-[16px] leading-[1.7] text-ink">{tx(m.text)}</div>
         {corrCase && <CorrectionHint caseId={corrCase} />}
         {tasks.map((x) => (
           <TaskCard key={x.id} task={x} caseRec={casesById[x.caseId]} />
@@ -356,7 +351,7 @@ function nodeState(events: AgentEvent[], tools: string[]) {
 }
 
 function RunBlock({ events, caseRec }: { events: AgentEvent[]; caseRec?: CaseRecord }) {
-  const { t } = usePrefs();
+  const { t, tx } = usePrefs();
   const isPipeline = events.some((e) => e.step);
   const running = events.some((e) => e.status === "running");
   const [open, setOpen] = useState(false);
@@ -371,7 +366,7 @@ function RunBlock({ events, caseRec }: { events: AgentEvent[]; caseRec?: CaseRec
       <div className="ml-[46px]">
         <button onClick={() => setOpen(!open)} className="flex items-center gap-1.5 text-[13px] text-ink-3 hover:text-ink-2">
           {running ? <Loader2 size={13} className="animate-spin text-accent" /> : human ? <UserRound size={13} /> : <Check size={13} />}
-          {running ? (current?.title ?? "…") : human ? human.title : t(`查詢 ${events.length} 項資料`, `Looked up ${events.length} item(s)`)}
+          {running ? tx(current?.title) || "…" : human ? tx(human.title) : t(`查詢 ${events.length} 項資料`, `Looked up ${events.length} item(s)`)}
           {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         </button>
         {open && (
@@ -403,7 +398,7 @@ function RunBlock({ events, caseRec }: { events: AgentEvent[]; caseRec?: CaseRec
       {running && current && !open && (
         <div className="flex items-center gap-2 border-t border-line-2 px-4 py-2.5 text-[13.5px] text-ink-2">
           <Loader2 size={13} className="animate-spin text-accent" />
-          {current.title}
+          {tx(current.title)}
         </div>
       )}
       <AnimatePresence initial={false}>
@@ -456,7 +451,7 @@ function SimBadge() {
 }
 
 function EventLine({ e, compact }: { e: AgentEvent; compact?: boolean }) {
-  const { t } = usePrefs();
+  const { t, tx } = usePrefs();
   const time = useTime();
   const [open, setOpen] = useState(false);
   const hasMore = !!(e.detail || e.data || e.citations?.length);
@@ -472,7 +467,7 @@ function EventLine({ e, compact }: { e: AgentEvent; compact?: boolean }) {
         <span className="mt-[3px] shrink-0">{e.actor === "human" ? <UserRound size={13} className="text-ink" /> : icon}</span>
         <span className="mt-[2px] w-[62px] shrink-0 font-mono text-[11.5px] text-ink-3">{time(e.ts)}</span>
         <span className="min-w-0 flex-1">
-          <span className={cx("text-[13.5px]", e.status === "running" ? "text-ink-2" : "text-ink")}>{e.title}</span>
+          <span className={cx("text-[13.5px]", e.status === "running" ? "text-ink-2" : "text-ink")}>{tx(e.title)}</span>
           <span className="ml-2 inline-flex flex-wrap items-center gap-1 align-middle">
             {e.tool && <span className="rounded bg-line-2 px-1 py-px font-mono text-[10.5px] text-ink-2">{e.tool}</span>}
             {e.actor === "human" && <span className="rounded bg-ink px-1 py-px text-[10.5px] text-paper">{t("人工", "human")}</span>}
@@ -486,7 +481,7 @@ function EventLine({ e, compact }: { e: AgentEvent; compact?: boolean }) {
         {open && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
             <div className="space-y-2 pb-2.5 pl-[96px] pr-2">
-              {e.detail && <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink-2">{e.detail}</div>}
+              {e.detail && <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink-2">{tx(e.detail)}</div>}
               <EventData data={e.data} />
               {e.citations?.length ? <Citations items={e.citations} /> : null}
             </div>
@@ -497,12 +492,17 @@ function EventLine({ e, compact }: { e: AgentEvent; compact?: boolean }) {
   );
 }
 
+const ZH_NUM: Record<string, string> = { 一: "1", 二: "2", 三: "3", 四: "4", 五: "5", 六: "6", 七: "7", 八: "8", 九: "9", 十: "10" };
+const citeLabel = (label: string, lang: string) =>
+  lang === "zh" ? label : label.replace(/^計畫\s*/, "Programme §").replace(/[一二三四五六七八九十]/g, (c) => ZH_NUM[c]);
+
 function Citations({ items }: { items: Citation[] }) {
+  const { lang } = usePrefs();
   return (
     <div className="space-y-1">
       {items.map((c) => (
         <a key={c.label + c.text} href={c.url} target="_blank" rel="noreferrer" className="block rounded-md border-l-2 border-accent/50 bg-accent-soft/50 px-2.5 py-1 text-[12px] leading-snug text-ink-2 hover:bg-accent-soft">
-          <span className="mr-1.5 font-medium text-accent">{c.label}</span>
+          <span className="mr-1.5 font-medium text-accent">{citeLabel(c.label, lang)}</span>
           {c.text}
         </a>
       ))}
@@ -522,9 +522,23 @@ function Prob({ p }: { p?: number }) {
   );
 }
 
+/** Chinese rendering of the (English) questions actually sent to Jev; the original stays in the tooltip. */
+const JEV_Q_ZH: Record<string, string> = {
+  doc_type: "這份文件是補助申請清單中的哪一種文件？",
+  fits_any: "這份文件屬於補助申請的應備文件之一。",
+  readable: "文件文字清晰可判讀（沒有掃描造成的亂碼、模糊或截斷）。",
+  injection: "文件含有試圖指示審查人員或系統略過檢查、改變結果或核准撥款的文字。",
+  start_consistent: "申請書填寫的訂閱起始日與收據上的訂閱日期相同。",
+  plan_type: "收據顯示的是哪一種訂閱方案？（個人／家庭共用／企業）",
+  course_is_ai: "教師證明書表明課程內容包含人工智慧主題。",
+  attention: "依據待處理問題與案件事實，這件需要多少人工注意？",
+  ...Object.fromEntries(Array.from({ length: 8 }, (_, i) => [`prepaid_${i}`, `第 ${i + 1} 張收據購買的是預付 API 點數／tokens，而不是訂閱方案。`])),
+};
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function EventData({ data }: { data: any }) {
-  const { t } = usePrefs();
+  const { t, tx, lang } = usePrefs();
+  const docName = (id: string) => DOC_LABELS[id]?.[lang === "zh" ? 0 : 1] ?? id;
   const ROUTE = { auto: t("自動續行", "auto"), verify: t("建議人工確認", "verify"), escalate: t("轉人工", "escalate") } as const;
   if (!data) return null;
   if (data.kind === "classification")
@@ -546,7 +560,7 @@ function EventData({ data }: { data: any }) {
               <tr key={r.file} className="border-t border-line-2">
                 <td className="px-2 py-1 font-mono text-[11px] text-ink-2">{r.file}</td>
                 <td className="px-2 py-1">
-                  {r.type} <span className="text-[10.5px] text-ink-3">{ROUTE[r.routed as keyof typeof ROUTE]}</span>
+                  {r.typeId ? docName(r.typeId) : r.type} <span className="text-[10.5px] text-ink-3">{ROUTE[r.routed as keyof typeof ROUTE]}</span>
                 </td>
                 <td className="px-2 py-1"><Prob p={r.p} /></td>
                 <td className="px-2 py-1"><Prob p={r.readable} /></td>
@@ -568,7 +582,7 @@ function EventData({ data }: { data: any }) {
         {data.required.map((r: any) => (
           <span key={r.id} className={cx("inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11.5px]", r.ok ? "bg-ok-soft text-ok" : "bg-bad-soft text-bad")}>
             {r.ok ? <Check size={10} /> : <X size={10} />}
-            {r.label}
+            {r.label ?? docName(r.id)}
           </span>
         ))}
       </div>
@@ -579,9 +593,9 @@ function EventData({ data }: { data: any }) {
         {(data.rules as RuleResult[]).map((r) => (
           <div key={r.id} className="flex items-start gap-1.5 text-[12px]">
             <span className="mt-[2px]">{r.result === "pass" ? <Check size={11} className="text-ok" /> : r.result === "fail" ? <X size={11} className="text-bad" /> : <AlertTriangle size={11} className="text-warn" />}</span>
-            <span className="text-ink">{r.title}</span>
-            <span className="text-ink-3">— {r.detail}</span>
-            <span className="ml-auto shrink-0 text-[10.5px] text-accent">{r.citation.label}</span>
+            <span className="text-ink">{tx(r.title)}</span>
+            <span className="text-ink-3">— {tx(r.detail)}</span>
+            <span className="ml-auto shrink-0 text-[10.5px] text-accent">{citeLabel(r.citation.label, lang)}</span>
           </div>
         ))}
       </div>
@@ -596,7 +610,7 @@ function EventData({ data }: { data: any }) {
               <span className="font-mono text-[11px] text-ink-2">{k}</span>
               {d.provider === "simulated" ? <SimBadge /> : <span className="font-mono text-[10.5px] text-ink-3">{d.model} · {d.latencyMs}ms</span>}
             </div>
-            <div className="mt-0.5 text-ink-2">{d.question}</div>
+            <div className="mt-0.5 text-ink-2" title={d.question}>{lang === "zh" ? (JEV_Q_ZH[k] ?? d.question) : d.question}</div>
             <div className="mt-1 flex flex-wrap items-center gap-2">
               <span className="font-medium text-ink">→ {d.type === "noul" ? t("P(是)", "P(yes)") : d.type === "score" ? `score ${Number(d.answer).toFixed(2)}` : String(d.answer)}</span>
               {d.type !== "score" && <Prob p={d.probability} />}
@@ -648,8 +662,8 @@ function EventData({ data }: { data: any }) {
       </div>
     );
   }
-  if (data.kind === "draft") return <pre className="whitespace-pre-wrap rounded-lg bg-paper p-2.5 font-sans text-[12.5px] leading-relaxed text-ink-2">{data.text}</pre>;
-  if (data.kind === "outcome") return <div className="text-[12px] text-ink-3">{data.note}</div>;
+  if (data.kind === "draft") return <pre className="whitespace-pre-wrap rounded-lg bg-paper p-2.5 font-sans text-[12.5px] leading-relaxed text-ink-2">{tx(data.text)}</pre>;
+  if (data.kind === "outcome") return <div className="text-[12px] text-ink-3">{tx(data.note)}</div>;
   if (data.args) return <pre className="font-mono text-[11px] text-ink-3">{JSON.stringify(data.args)}</pre>;
   return null;
 }
@@ -657,9 +671,12 @@ function EventData({ data }: { data: any }) {
 /* ---------------------------------- tasks ---------------------------------- */
 
 function TaskCard({ task, caseRec }: { task: ReviewTask; caseRec?: CaseRecord }) {
-  const { t } = usePrefs();
+  const { t, tx, lang } = usePrefs();
   const time = useTime();
-  const [draft, setDraft] = useState(task.draft ?? "");
+  // edits are kept per language so switching EN/中 never loses what the officer typed
+  const [edits, setEdits] = useState<Partial<Record<string, string>>>({});
+  const draft = edits[lang] ?? tx(task.draft);
+  const setDraft = (v: string) => setEdits((e) => ({ ...e, [lang]: v }));
   const [changing, setChanging] = useState(false);
   const [showWhy, setShowWhy] = useState(false);
   const [note, setNote] = useState("");
@@ -668,7 +685,7 @@ function TaskCard({ task, caseRec }: { task: ReviewTask; caseRec?: CaseRecord })
 
   const decide = async (action: "approve" | "request_changes") => {
     setBusy(action);
-    await post(`/api/tasks/${task.id}`, { action, note: action === "request_changes" ? note : undefined, draft: draft !== task.draft ? draft : undefined });
+    await post(`/api/tasks/${task.id}`, { action, note: action === "request_changes" ? note : undefined, draft: draft !== tx(task.draft) ? draft : undefined });
     setBusy(null);
     setChanging(false);
   };
@@ -687,7 +704,7 @@ function TaskCard({ task, caseRec }: { task: ReviewTask; caseRec?: CaseRecord })
         <Check size={16} className="text-ok" />
         <span className="font-medium">{task.status === "approved" ? t("你已核可", "You approved") : t("你已要求修改", "You requested changes")}</span>
         <span className="text-ink-3">
-          {task.caseId} · {task.title}
+          {task.caseId} · {tx(task.title)}
         </span>
         {task.decisionNote && <span className="text-ink-2">“{task.decisionNote}”</span>}
         {task.decidedAt && <span className="ml-auto text-[12.5px] text-ink-3">{time(task.decidedAt)}</span>}
@@ -704,7 +721,7 @@ function TaskCard({ task, caseRec }: { task: ReviewTask; caseRec?: CaseRecord })
             </div>
             <div className="mt-1.5 text-[20px] font-semibold leading-snug text-ink">{question}</div>
             <ul className="mt-2.5 space-y-1.5 text-[15px] leading-relaxed text-ink">
-              {(caseRec?.issues?.length ? caseRec.issues : [task.issue]).slice(0, 4).map((i) => (
+              {(caseRec?.issues?.length ? caseRec.issues : [task.issue]).slice(0, 4).map(tx).map((i) => (
                 <li key={i} className="flex gap-2">
                   <span className="mt-[10px] h-1.5 w-1.5 shrink-0 rounded-full bg-warn" />
                   {i}
@@ -714,7 +731,7 @@ function TaskCard({ task, caseRec }: { task: ReviewTask; caseRec?: CaseRecord })
           </div>
           <div className="flex items-start gap-2 rounded-xl bg-accent-soft/60 px-4 py-3 text-[14.5px] leading-relaxed">
             <Sparkles size={15} className="mt-[4px] shrink-0 text-accent" />
-            <span className="text-ink">{task.recommendation}</span>
+            <span className="text-ink">{tx(task.recommendation)}</span>
           </div>
         </div>
 
@@ -772,8 +789,8 @@ function TaskCard({ task, caseRec }: { task: ReviewTask; caseRec?: CaseRecord })
               <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[13.5px]">
                 {task.evidence.map((e, i) => (
                   <div key={i} className="contents">
-                    <span className="text-ink-3">{e.label}</span>
-                    <span className="text-ink">{e.value}</span>
+                    <span className="text-ink-3">{tx(e.label)}</span>
+                    <span className="text-ink">{tx(e.value)}</span>
                   </div>
                 ))}
               </div>

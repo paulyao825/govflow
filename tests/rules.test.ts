@@ -64,13 +64,14 @@ test("Case C: conflicting start date, shared plan and non-AI course name are not
   assert.equal(r.suggestedAmount, undefined, "amount must not be computed while dates conflict");
 });
 
-test("Case D: unreadable household record leaves residence unknown (never pass)", () => {
-  const r = run("D");
+test("Unreadable household record leaves residence unknown (never pass)", () => {
+  const d = docs("A").map((x) => (x.classifiedAs === "household_record" ? { ...x, readable: false } : x));
+  const r = evaluateRules(extractFacts(d), d);
   assert.equal(r.rules.find((x) => x.id === "residence")!.result, "unknown");
 });
 
 test("No rule ever approves: results are only pass/fail/unknown", () => {
-  for (const k of ["A", "B", "C", "D"]) for (const x of run(k).rules) assert.ok(["pass", "fail", "unknown"].includes(x.result));
+  for (const k of ["A", "B", "C"]) for (const x of run(k).rules) assert.ok(["pass", "fail", "unknown"].includes(x.result));
 });
 
 test("Monthly cycle outside 8/1–10/31 fails; PRC tool fails", () => {

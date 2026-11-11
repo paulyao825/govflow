@@ -95,7 +95,13 @@ const firestoreBackend: Backend = {
     await (await firestore()).collection(COLL_PREFIX + c).doc((doc as { id: string }).id).set(stripUndef(doc));
   },
   async patch(c, id, p) {
-    await (await firestore()).collection(COLL_PREFIX + c).doc(id).set(stripUndef(p), { merge: true });
+    // update() never creates a document: a late write after a demo reset must not leave a half-empty ghost record
+    try {
+      await (await firestore()).collection(COLL_PREFIX + c).doc(id).update(stripUndef(p));
+    } catch (e) {
+      if ((e as { code?: number }).code === 5) return; // NOT_FOUND
+      throw e;
+    }
   },
   async list(c) {
     const s = await (await firestore()).collection(COLL_PREFIX + c).get();

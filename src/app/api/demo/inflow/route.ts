@@ -12,7 +12,7 @@ export async function POST(req: Request) {
   after(async () => {
     for (const s of scenarios as string[]) {
       const r = await receiveApplication(s, lang);
-      if (r.caseId && !r.duplicate) await processInBackground(r.caseId, lang === "zh" ? "事件觸發：收件匣新申請" : "Event: new application in the inbox", lang);
+      if (r.caseId && !r.duplicate) await processInBackground(r.caseId, { zh: "事件觸發：收件匣新申請", en: "Event: new application in the inbox" }, lang);
     }
   });
   return Response.json({ ok: true });

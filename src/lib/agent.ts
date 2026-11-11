@@ -1,7 +1,7 @@
 import "server-only";
 import type OpenAI from "openai";
 import { receiveApplication, receiveCorrection } from "./actions";
-import { L, type Lang } from "./i18n";
+import { L, bi, pick, type Lang } from "./i18n";
 import { jevMode } from "./jev";
 import { LLM_MODEL, llmMode, openai } from "./llm";
 import { OUTCOME_LABEL, processCase } from "./pipeline";
@@ -23,7 +23,7 @@ const brief = (c: CaseRecord, lang: Lang) => ({
   applicant: c.applicantLabel,
   status: STATUS_LABEL[lang][c.status],
   agent_outcome: c.outcome ? OUTCOME_LABEL[lang][c.outcome] : null,
-  issues: c.issues ?? [],
+  issues: (c.issues ?? []).map((i) => pick(i, lang)),
 });
 
 async function metrics() {
@@ -66,7 +66,7 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
 async function execTool(ctx: RunCtx, name: string, args: Record<string, unknown>): Promise<unknown> {
   const lang = ctx.lang;
   const t0 = performance.now();
-  const ev = await logEvent(ctx, { tool: name, title: L(lang, `呼叫 ${name}`, `Calling ${name}`), status: "running", data: { args } });
+  const ev = await logEvent(ctx, { tool: name, title: bi(`呼叫 ${name}`, `Calling ${name}`), status: "running", data: { args } });
   let out: unknown;
   try {
     out = await (async () => {
@@ -86,10 +86,10 @@ async function execTool(ctx: RunCtx, name: string, args: Record<string, unknown>
           return {
             ...brief(c, lang),
             facts: c.facts,
-            rules_not_passed: c.rules?.filter((r) => r.result !== "pass").map((r) => ({ rule: r.title, result: r.result, detail: r.detail, citation: `${r.citation.label} ${r.citation.text}` })),
+            rules_not_passed: c.rules?.filter((r) => r.result !== "pass").map((r) => ({ rule: pick(r.title, lang), result: r.result, detail: pick(r.detail, lang), citation: `${r.citation.label} ${r.citation.text}` })),
             jev_decisions: c.decisions,
             suggested_amount_not_final: c.suggestedAmount,
-            tasks: tasks.map((t) => ({ title: t.title, status: t.status })),
+            tasks: tasks.map((t) => ({ title: pick(t.title, lang), status: t.status })),
             documents: c.documents.map((d) => ({ file: d.fileName, type: d.classifiedAs, readable: d.readable, injection_flag: d.injectionSuspected })),
           };
         }
@@ -100,7 +100,7 @@ async function execTool(ctx: RunCtx, name: string, args: Record<string, unknown>
           for (const s of pending) {
             const r = await receiveApplication(s.key, lang);
             if (r.caseId && !r.duplicate) {
-              await processCase(r.caseId, { trigger: L(lang, "承辦人指令：處理收件匣新案件", "Officer: process new applications in the inbox"), lang });
+              await processCase(r.caseId, { trigger: bi("承辦人指令：處理收件匣新案件", "Officer: process new applications in the inbox"), lang });
               done.push(brief((await db.get("cases", r.caseId))!, lang));
             }
           }
@@ -109,14 +109,14 @@ async function execTool(ctx: RunCtx, name: string, args: Record<string, unknown>
         case "reprocess_case": {
           const id = String(args.case_id).toUpperCase();
           if (!(await db.get("cases", id))) return { error: "case not found" };
-          await processCase(id, { trigger: L(lang, "承辦人指令：重新處理", "Officer: re-run this case"), lang });
+          await processCase(id, { trigger: bi("承辦人指令：重新處理", "Officer: re-run this case"), lang });
           return brief((await db.get("cases", id))!, lang);
         }
         case "ingest_correction": {
           const id = String(args.case_id).toUpperCase();
           if (!CORRECTIONS[id]) return { error: "no pending correction for this case (demo data)" };
           const ok = await receiveCorrection(id, undefined, lang);
-          if (ok) await processCase(id, { trigger: L(lang, "申請人補件到達", "Applicant correction arrived"), lang });
+          if (ok) await processCase(id, { trigger: bi("申請人補件到達", "Applicant correction arrived"), lang });
           return brief((await db.get("cases", id))!, lang);
         }
         case "processing_metrics":
@@ -125,7 +125,7 @@ async function execTool(ctx: RunCtx, name: string, args: Record<string, unknown>
           return { error: "unknown tool" };
       }
     })();
-    await db.patch("events", ev.id, { status: "ok", durationMs: Math.round(performance.now() - t0), title: L(lang, `${name} 完成`, `${name} done`), updatedAt: Date.now() });
+    await db.patch("events", ev.id, { status: "ok", durationMs: Math.round(performance.now() - t0), title: bi(`${name} 完成`, `${name} done`), updatedAt: Date.now() });
   } catch (e) {
     await db.patch("events", ev.id, { status: "error", detail: String(e), updatedAt: Date.now() });
     out = { error: String(e) };
@@ -149,7 +149,7 @@ export async function handleCommand(text: string, lang: Lang = "en") {
   await agentSay({ role: "user", kind: "chat", text, runId });
 
   if (/(核准|批准|approve|撥款|直接寄出|pay out|disburse)/i.test(text) && !/為什麼|why|說明/i.test(text)) {
-    await logEvent(ctx, { tool: "guardrail", title: L(lang, "已攔截：核准／對外寄送屬人工權限，agent 不執行", "Blocked: approving and sending are human-only — the agent will not do them"), status: "warn" });
+    await logEvent(ctx, { tool: "guardrail", title: bi("已攔截：核准／對外寄送屬人工權限，agent 不執行", "Blocked: approving and sending are human-only — the agent will not do them"), status: "warn" });
   }
 
   if (llmMode() === "fallback") return fallback(ctx, text);
@@ -174,14 +174,14 @@ export async function handleCommand(text: string, lang: Lang = "en") {
     }
     await agentSay({ kind: "chat", runId, text: L(lang, "這個指令需要的步驟太多，我先停在這裡。可以把目標拆小一點再交給我嗎？", "That needs too many steps, so I stopped here. Could you break it into a smaller request?"), llm: "openai" });
   } catch (e) {
-    await logEvent(ctx, { tool: "llm", title: L(lang, "LLM 呼叫失敗，改用規則式指令解析", "LLM call failed — using the rule-based fallback"), detail: String(e), status: "error" });
+    await logEvent(ctx, { tool: "llm", title: bi("LLM 呼叫失敗，改用規則式指令解析", "LLM call failed — using the rule-based fallback"), detail: String(e), status: "error" });
     return fallback(ctx, text);
   }
 }
 
 async function recentHistory(): Promise<OpenAI.Chat.Completions.ChatCompletionMessageParam[]> {
   const msgs = (await db.list("messages")).sort((a, b) => a.ts - b.ts).slice(-8);
-  return msgs.map((m) => ({ role: m.role === "user" ? "user" : "assistant", content: m.text }));
+  return msgs.map((m) => (m.role === "user" ? { role: "user" as const, content: pick(m.text, "en") } : { role: "assistant" as const, content: pick(m.text, "en") }));
 }
 
 /** No-LLM mode: deterministic intent routing over the same tools. Clearly labelled. */
