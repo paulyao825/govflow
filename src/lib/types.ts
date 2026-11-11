@@ -103,6 +103,8 @@ export interface CaseRecord {
   outcome?: AgentOutcome;
   documents: CaseDocument[];
   facts?: CaseFacts;
+  /** fields the LLM filled in because the deterministic parser could not read them */
+  llmFilledFields?: string[];
   rules?: RuleResult[];
   decisions?: Record<string, DecisionRecord>;
   issues?: string[];

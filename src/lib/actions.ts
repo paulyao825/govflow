@@ -102,3 +102,66 @@ export async function resetDemo(lang: Lang = "en") {
     ),
   });
 }
+
+export interface UploadFile {
+  name: string;
+  mime: string;
+  bytes: Buffer;
+}
+
+/**
+ * Officer uploads scanned files: either a brand-new application, or a correction for an existing case.
+ * The case is created immediately (so the UI shows it), then OCR + the workflow run in the background.
+ */
+export async function receiveUpload(files: UploadFile[], lang: Lang, targetCaseId?: string): Promise<{ caseId: string; duplicate: boolean }> {
+  const key = sha(files.map((f) => createHash("sha256").update(f.bytes).digest("hex")).join("|"));
+  if (targetCaseId) {
+    const c = await db.get("cases", targetCaseId);
+    if (!c) throw new Error("case not found");
+    return { caseId: c.id, duplicate: false };
+  }
+  const existing = (await db.list("cases")).find((c) => c.idempotencyKey === key);
+  if (existing) {
+    await logEvent({ runId: uid("run"), caseId: existing.id, lang }, { actor: "system", tool: "receive_application", title: L(lang, `重複上傳（與 ${existing.id} 內容相同），已略過`, `Duplicate upload (same files as ${existing.id}) — skipped`), status: "warn" });
+    return { caseId: existing.id, duplicate: true };
+  }
+  const n = (await db.list("cases")).filter((c) => c.id.startsWith("U-")).length + 1;
+  const now = Date.now();
+  const c: CaseRecord = {
+    id: `U-${String(n).padStart(3, "0")}`,
+    workflowId: youthAiSubsidyWorkflow.id,
+    applicantLabel: L(lang, "上傳案件", "Uploaded"),
+    receivedVia: L(lang, "承辦人上傳", "Uploaded by officer"),
+    scenario: "upload",
+    status: "received",
+    stage: "receive_documents",
+    documents: [],
+    idempotencyKey: key,
+    lock: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await db.set("cases", c);
+  return { caseId: c.id, duplicate: false };
+}
+
+/** Background half of an upload: OCR each file as a logged agent step, attach, then run the workflow. */
+export async function ocrAndProcess(caseId: string, files: UploadFile[], lang: Lang, isCorrection: boolean) {
+  const { ocrFile } = await import("./ocr");
+  const { runTool } = await import("./runtime");
+  const ctx = { runId: uid("run"), caseId, lang };
+  const docs = await runTool(ctx, { tool: "parse_documents", permission: "read_documents", step: "receive_documents", title: L(lang, `OCR 讀取 ${files.length} 個上傳檔案`, `OCR-reading ${files.length} uploaded file(s)`) }, async () => {
+    const out = await Promise.all(files.map(async (f) => ({ f, r: await ocrFile(f.name, f.mime, f.bytes) })));
+    return {
+      result: out.map(({ f, r }) => ({ fileName: f.name, text: r.text })),
+      detail: out.map(({ f, r }) => `${f.name}: ${r.method === "vision" ? "vision OCR" : r.method === "text" ? "text" : "OCR unavailable"} · ${r.text.length} chars`).join("\n"),
+      status: out.some(({ r }) => r.method === "unavailable") ? ("warn" as const) : ("ok" as const),
+    };
+  });
+  const c = (await db.get("cases", caseId))!;
+  const known = new Set(c.documents.map((d) => d.sha));
+  const fresh = docs.map(toDoc).filter((d) => !known.has(d.sha));
+  const name = fresh.map((d) => d.text.match(/申請人[：:]\s*(.+)/)?.[1]?.trim()).find(Boolean);
+  await db.patch("cases", caseId, { documents: [...c.documents, ...fresh], status: "received", updatedAt: Date.now(), ...(name && !isCorrection ? { applicantLabel: name } : {}) });
+  await processCase(caseId, { trigger: isCorrection ? L(lang, "承辦人上傳補件", "Officer uploaded a correction") : L(lang, "承辦人上傳新申請", "Officer uploaded a new application"), lang });
+}

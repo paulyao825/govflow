@@ -1,5 +1,5 @@
 "use client";
-import { AlertTriangle, ArrowUp, Check, ChevronDown, ChevronRight, CircleDashed, FileText, FlaskConical, Hand, Loader2, Moon, MoreHorizontal, ShieldAlert, Sparkles, Sun, UserRound, X } from "lucide-react";
+import { AlertTriangle, ArrowUp, Check, Paperclip, Upload, ChevronDown, ChevronRight, CircleDashed, FileText, FlaskConical, Hand, Loader2, Moon, MoreHorizontal, ShieldAlert, Sparkles, Sun, UserRound, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentEvent, CaseRecord, Citation, DecisionRecord, ReviewTask, RuleResult, ThreadMessage } from "@/lib/types";
@@ -33,6 +33,9 @@ export default function GovFlowApp() {
   const { feed, meta } = useFeed();
   const { t } = usePrefs();
   const [busy, setBusy] = useState(false);
+  const [files, setFiles] = useState<File[]>([]);
+  const [dragging, setDragging] = useState(false);
+  const addFiles = (list: FileList | File[] | null) => list && setFiles((f) => [...f, ...Array.from(list)].slice(0, 12));
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -74,7 +77,32 @@ export default function GovFlowApp() {
   const pending = feed.tasks.filter((x) => x.status === "pending").length;
 
   return (
-    <div className="flex h-dvh flex-col">
+    <div
+      className="relative flex h-dvh flex-col"
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes("Files")) {
+          e.preventDefault();
+          setDragging(true);
+        }
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget === e.target) setDragging(false);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragging(false);
+        addFiles(e.dataTransfer.files);
+      }}
+    >
+      {dragging && (
+        <div className="pointer-events-none absolute inset-0 z-40 grid place-items-center bg-paper/80 backdrop-blur-sm">
+          <div className="rounded-2xl border-2 border-dashed border-accent px-10 py-8 text-center">
+            <Upload className="mx-auto mb-2 text-accent" size={28} />
+            <div className="text-[17px] font-semibold">{t("放開即可上傳文件", "Drop files to upload")}</div>
+            <div className="mt-1 text-[13px] text-ink-3">PDF · PNG · JPG · TXT</div>
+          </div>
+        </div>
+      )}
       <Header meta={meta} working={working} pending={pending} cases={feed.cases} />
       <div ref={scrollRef} className="scrollbar-thin flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-[920px] px-6 pb-12 pt-8 lg:px-10">
@@ -91,7 +119,8 @@ export default function GovFlowApp() {
           <div ref={bottomRef} className="h-2" />
         </div>
       </div>
-      <Composer onSend={send} busy={busy} suggestions={[t("處理收件匣的新申請", "Process new applications"), t("哪些案件需要我決定？", "What needs my decision?"), t("為什麼 C-003 要轉人工？", "Why was C-003 escalated?"), t("總結今天的處理結果", "Summarise today")]} />
+      {files.length > 0 && <UploadTray files={files} setFiles={setFiles} cases={feed.cases} />}
+      <Composer onSend={send} busy={busy} onPickFiles={addFiles} suggestions={[t("處理收件匣的新申請", "Process new applications"), t("哪些案件需要我決定？", "What needs my decision?"), t("為什麼 C-003 要轉人工？", "Why was C-003 escalated?"), t("總結今天的處理結果", "Summarise today")]} />
     </div>
   );
 }
@@ -282,7 +311,7 @@ function CorrectionHint({ caseId }: { caseId: string }) {
 /* ---------------------------------- runs ----------------------------------- */
 
 const NODES: { id: string; zh: string; en: string; tools: string[] }[] = [
-  { id: "trigger", zh: "觸發", en: "Trigger", tools: ["receive_application"] },
+  { id: "trigger", zh: "觸發", en: "Trigger", tools: ["receive_application", "parse_documents"] },
   { id: "sop", zh: "SOP", en: "SOP", tools: ["load_government_sop"] },
   { id: "docs", zh: "文件", en: "Documents", tools: ["classify_document", "extract_case_facts", "validate_completeness"] },
   { id: "rules", zh: "規則", en: "Rules", tools: ["evaluate_deterministic_rules"] },
@@ -775,9 +804,10 @@ function EvidenceList({ c }: { c: CaseRecord }) {
 
 /* --------------------------------- composer -------------------------------- */
 
-function Composer({ onSend, busy, suggestions }: { onSend: (t: string) => void; busy: boolean; suggestions: string[] }) {
+function Composer({ onSend, busy, suggestions, onPickFiles }: { onSend: (t: string) => void; busy: boolean; suggestions: string[]; onPickFiles: (f: FileList | null) => void }) {
   const { t } = usePrefs();
   const [text, setText] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
   const submit = () => {
     if (!text.trim()) return;
     onSend(text);
@@ -793,7 +823,21 @@ function Composer({ onSend, busy, suggestions }: { onSend: (t: string) => void; 
             </button>
           ))}
         </div>
-        <div className="flex items-end gap-2 rounded-2xl border border-line bg-card px-4 py-2.5 shadow-sm focus-within:border-accent/40">
+        <div className="flex items-end gap-2 rounded-2xl border border-line bg-card px-3 py-2.5 shadow-sm focus-within:border-accent/40">
+          <input
+            ref={fileRef}
+            type="file"
+            multiple
+            accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,application/pdf,image/*,text/plain"
+            className="hidden"
+            onChange={(e) => {
+              onPickFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
+          <button onClick={() => fileRef.current?.click()} className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink-2 hover:bg-line-2" aria-label={t("上傳文件", "Upload documents")} title={t("上傳文件（PDF／圖片／文字）", "Upload documents (PDF / image / text)")}>
+            <Paperclip size={17} />
+          </button>
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -811,6 +855,79 @@ function Composer({ onSend, busy, suggestions }: { onSend: (t: string) => void; 
             {busy ? <Loader2 size={16} className="animate-spin" /> : <ArrowUp size={16} />}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* --------------------------------- upload ---------------------------------- */
+
+function UploadTray({ files, setFiles, cases }: { files: File[]; setFiles: (f: File[]) => void; cases: CaseRecord[] }) {
+  const { t, lang } = usePrefs();
+  const targets = cases.filter((c) => c.status === "awaiting_correction" || c.status === "awaiting_human");
+  const [target, setTarget] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const total = files.reduce((n, f) => n + f.size, 0);
+  const tooBig = total > 4 * 1024 * 1024;
+
+  const upload = async () => {
+    setBusy(true);
+    setErr(null);
+    const fd = new FormData();
+    files.forEach((f) => fd.append("files", f));
+    fd.append("lang", lang);
+    if (target) fd.append("caseId", target);
+    try {
+      const r = await fetch("/api/upload", { method: "POST", body: fd });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) setErr(j.error ?? `HTTP ${r.status}`);
+      else setFiles([]);
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="border-t border-line bg-card">
+      <div className="mx-auto max-w-[920px] space-y-3 px-6 py-4 lg:px-10">
+        <div className="flex items-center gap-2 text-[14px] font-medium">
+          <Upload size={15} className="text-accent" />
+          {t(`準備上傳 ${files.length} 個檔案`, `${files.length} file(s) ready to upload`)}
+          <span className="text-[12.5px] font-normal text-ink-3">· {(total / 1024 / 1024).toFixed(1)} MB / 4 MB</span>
+          <button onClick={() => setFiles([])} className="ml-auto text-[13px] text-ink-3 hover:text-ink">
+            {t("取消", "Cancel")}
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {files.map((f, i) => (
+            <span key={i} className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-paper px-2.5 py-1 text-[12.5px]">
+              <FileText size={12} className="text-ink-3" />
+              {f.name}
+              <button onClick={() => setFiles(files.filter((_, j) => j !== i))} className="text-ink-3 hover:text-bad" aria-label="remove">
+                <X size={12} />
+              </button>
+            </span>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <select value={target} onChange={(e) => setTarget(e.target.value)} className="rounded-lg border border-line bg-paper px-3 py-2 text-[14px] text-ink outline-none">
+            <option value="">{t("這是一件新申請", "This is a new application")}</option>
+            {targets.map((c) => (
+              <option key={c.id} value={c.id}>
+                {t(`補件：${c.id} ${c.applicantLabel}`, `Correction for ${c.id} ${c.applicantLabel}`)}
+              </option>
+            ))}
+          </select>
+          <button disabled={busy || tooBig} onClick={upload} className="inline-flex items-center gap-2 rounded-xl bg-ink px-5 py-2 text-[14.5px] font-semibold text-paper disabled:opacity-40">
+            {busy ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+            {t("交給 GovFlow 處理", "Hand to GovFlow")}
+          </button>
+          <span className="text-[12px] text-warn">{t("展示網站為公開環境：請只上傳測試／合成文件，勿上傳真實個資。", "Public demo: upload test/synthetic documents only — no real personal data.")}</span>
+        </div>
+        {(err || tooBig) && <div className="text-[13px] text-bad">{tooBig ? t("檔案總大小超過 4 MB", "Total size is over 4 MB") : err}</div>}
       </div>
     </div>
   );

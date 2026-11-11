@@ -161,7 +161,7 @@ export async function handleCommand(text: string, lang: Lang = "en") {
       const m = r.choices[0].message;
       messages.push(m);
       if (!m.tool_calls?.length) {
-        const caseIds = [...new Set((m.content ?? "").match(/[A-D]-00\d/g) ?? [])];
+        const caseIds = [...new Set((m.content ?? "").match(/[A-Z]-\d{3}/g) ?? [])];
         await agentSay({ kind: "chat", runId, text: m.content ?? "…", llm: "openai", caseIds });
         return;
       }
@@ -188,7 +188,7 @@ async function recentHistory(): Promise<OpenAI.Chat.Completions.ChatCompletionMe
 async function fallback(ctx: RunCtx, text: string) {
   const lang = ctx.lang;
   const t_ = (zh: string, en: string) => L(lang, zh, en);
-  const id = text.match(/[A-Da-d]-?0*0?\d/)?.[0]?.toUpperCase().replace(/^([A-D])-?0*(\d)$/, "$1-00$2");
+  const id = text.match(/[A-Za-z]-?\d{1,3}\b/)?.[0]?.toUpperCase().replace(/^([A-Z])-?0*(\d+)$/, (_m, a, b) => `${a}-${String(b).padStart(3, "0")}`);
   const say = (t: string) => agentSay({ kind: "chat", runId: ctx.runId, text: `${t}\n\n${t_("（LLM 未設定或無法使用：以規則式指令解析回覆）", "(LLM unavailable — rule-based reply)")}`, llm: "fallback", caseIds: id ? [id] : [] });
   if (/(核准|批准|approve|撥款|pay out|disburse)/i.test(text) && !/為什麼|why/i.test(text))
     return say(t_("核准與撥款是承辦人和權責主管的權限，我不能代為執行。請在案件的審核卡片上按「核可」。", "Approval and payment belong to you and your supervisor; I cannot do them. Press Approve on the case card."));
