@@ -112,17 +112,17 @@ export interface UploadFile {
  * Officer uploads scanned files: either a brand-new application, or a correction for an existing case.
  * The case is created immediately (so the UI shows it), then OCR + the workflow run in the background.
  */
-export async function receiveUpload(files: UploadFile[], lang: Lang, targetCaseId?: string): Promise<{ caseId: string; duplicate: boolean }> {
+export async function receiveUpload(files: UploadFile[], lang: Lang, targetCaseId?: string): Promise<{ caseId: string; duplicate: boolean; token: number }> {
   const key = sha(files.map((f) => createHash("sha256").update(f.bytes).digest("hex")).join("|"));
   if (targetCaseId) {
     const c = await db.get("cases", targetCaseId);
     if (!c) throw new Error("case not found");
-    return { caseId: c.id, duplicate: false };
+    return { caseId: c.id, duplicate: false, token: c.createdAt };
   }
   const existing = (await db.list("cases")).find((c) => c.idempotencyKey === key);
   if (existing) {
     await logEvent({ runId: uid("run"), caseId: existing.id, lang }, { actor: "system", tool: "receive_application", title: bi(`重複上傳（與 ${existing.id} 內容相同），已略過`, `Duplicate upload (same files as ${existing.id}) — skipped`), status: "warn" });
-    return { caseId: existing.id, duplicate: true };
+    return { caseId: existing.id, duplicate: true, token: existing.createdAt };
   }
   const n = (await db.list("cases")).filter((c) => c.id.startsWith("U-")).length + 1;
   const now = Date.now();
@@ -141,11 +141,11 @@ export async function receiveUpload(files: UploadFile[], lang: Lang, targetCaseI
     updatedAt: now,
   };
   await db.set("cases", c);
-  return { caseId: c.id, duplicate: false };
+  return { caseId: c.id, duplicate: false, token: c.createdAt };
 }
 
 /** Background half of an upload: OCR each file as a logged agent step, attach, then run the workflow. */
-export async function ocrAndProcess(caseId: string, files: UploadFile[], lang: Lang, isCorrection: boolean) {
+export async function ocrAndProcess(caseId: string, files: UploadFile[], lang: Lang, isCorrection: boolean, token: number) {
   const { ocrFile, splitPages } = await import("./ocr");
   const { runTool } = await import("./runtime");
   const ctx = { runId: uid("run"), caseId, lang };
@@ -158,7 +158,9 @@ export async function ocrAndProcess(caseId: string, files: UploadFile[], lang: L
       status: out.some(({ r }) => r.method === "unavailable") ? ("warn" as const) : ("ok" as const),
     };
   });
-  const c = (await db.get("cases", caseId))!;
+  const c = await db.get("cases", caseId);
+  // the demo may have been reset (and the id reused) while OCR was running: never write into a different case
+  if (!c || c.createdAt !== token) return;
   const known = new Set(c.documents.map((d) => d.sha));
   const fresh = docs.map(toDoc).filter((d) => !known.has(d.sha));
   const name = fresh.map((d) => d.text.match(/申請人[：:]\s*(.+)/)?.[1]?.trim()).find(Boolean);

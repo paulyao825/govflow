@@ -35,7 +35,7 @@ export default function GovFlowApp() {
   const [busy, setBusy] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [dragging, setDragging] = useState(false);
-  const addFiles = (list: FileList | File[] | null) => list && setFiles((f) => [...f, ...Array.from(list)].slice(0, 12));
+  const addFiles = (list: FileList | File[] | null) => list && setFiles((f) => [...f, ...Array.from(list)].slice(0, 20));
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -124,7 +124,7 @@ export default function GovFlowApp() {
           <div className="rounded-2xl border-2 border-dashed border-accent px-10 py-8 text-center">
             <Upload className="mx-auto mb-2 text-accent" size={28} />
             <div className="text-[17px] font-semibold">{t("放開即可上傳文件", "Drop files to upload")}</div>
-            <div className="mt-1 text-[13px] text-ink-3">PDF · PNG · JPG · TXT</div>
+            <div className="mt-1 text-[13px] text-ink-3">PDF · PNG · JPG · TXT · ZIP</div>
           </div>
         </div>
       )}
@@ -870,14 +870,14 @@ function Composer({ onSend, busy, suggestions, onPickFiles, hasFiles }: { onSend
             ref={fileRef}
             type="file"
             multiple
-            accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,application/pdf,image/*,text/plain"
+            accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.zip,application/pdf,image/*,text/plain,application/zip"
             className="hidden"
             onChange={(e) => {
               onPickFiles(e.target.files);
               e.target.value = "";
             }}
           />
-          <button onClick={() => fileRef.current?.click()} className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink-2 hover:bg-line-2" aria-label={t("上傳文件", "Upload documents")} title={t("上傳文件（PDF／圖片／文字）", "Upload documents (PDF / image / text)")}>
+          <button onClick={() => fileRef.current?.click()} className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink-2 hover:bg-line-2" aria-label={t("上傳文件", "Upload documents")} title={t("上傳文件（PDF／圖片／文字／ZIP）", "Upload documents (PDF / image / text / ZIP)")}>
             <Paperclip size={17} />
           </button>
           <textarea

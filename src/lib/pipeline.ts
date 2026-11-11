@@ -32,6 +32,8 @@ const garbled = (text: string) => (text.match(/▯/g)?.length ?? 0) > 5;
 const route = (p: number | undefined): "auto" | "verify" | "escalate" =>
   p === undefined ? "escalate" : p >= T.classifyAuto ? "auto" : p >= T.classifyVerify ? "verify" : "escalate";
 
+class StaleRun extends Error {}
+
 const uniqCites = (c: Citation[]) => [...new Map(c.map((x) => [x.label, x])).values()];
 
 export async function processCase(caseId: string, opts: { runId?: string; trigger: Txt; lang: Lang }) {
@@ -50,7 +52,11 @@ export async function processCase(caseId: string, opts: { runId?: string; trigge
   }
 
   let c = (await db.get("cases", caseId))!;
+  const born = c.createdAt;
   const save = async (patch: Partial<CaseRecord>) => {
+    // if the demo was reset (and the id reused) mid-run, stop instead of writing into a different case
+    const cur = await db.get("cases", caseId);
+    if (!cur || cur.createdAt !== born) throw new StaleRun();
     c = { ...c, ...patch, updatedAt: Date.now() };
     await db.patch("cases", caseId, { ...patch, updatedAt: c.updatedAt });
   };
@@ -403,7 +409,8 @@ export async function processCase(caseId: string, opts: { runId?: string; trigge
 
     await agentSay({ kind: "proactive", runId, caseIds: [caseId], taskIds: [task.id], text: bi(proactiveText(c, outcome, issues, "zh"), proactiveText(c, outcome, issues, "en")) });
   } catch (e) {
-    await save({ status: "awaiting_human", lock: null, outcome: "REQUIRE_HUMAN_REVIEW" });
+    if (e instanceof StaleRun) return; // case was reset away under us: nothing to report
+    await save({ status: "awaiting_human", lock: null, outcome: "REQUIRE_HUMAN_REVIEW" }).catch(() => {});
     const msg = e instanceof Error ? e.message : String(e);
     await logEvent(ctx, { title: t_("流程發生錯誤，已安全停止並轉人工：" + msg, "Error — stopped safely and handed to a human: " + msg), status: "error", tool: "update_case_state" });
     await agentSay({ kind: "proactive", runId, caseIds: [caseId], text: t_(`${caseId} 處理時發生錯誤，我已停止自動流程、未做任何結論，需要你人工接手。`, `Something went wrong on ${caseId}. I stopped, made no conclusion, and need you to take over.`) });
