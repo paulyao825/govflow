@@ -1,0 +1,11 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Demo feed collections hold synthetic data only: public read for the live UI.
+    // All writes go through the Next.js server (firebase-admin), never the browser.
+    match /{coll}/{id} {
+      allow read: if coll in ['gf_cases', 'gf_events', 'gf_tasks', 'gf_messages', 'gf_outbox'];
+      allow write: if false;
+    }
+  }
+}
