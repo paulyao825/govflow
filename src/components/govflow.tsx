@@ -31,7 +31,7 @@ export function Logo({ size = 28 }: { size?: number }) {
 
 export default function GovFlowApp() {
   const { feed, meta } = useFeed();
-  const { t } = usePrefs();
+  const { t, lang } = usePrefs();
   const [busy, setBusy] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [dragging, setDragging] = useState(false);
@@ -63,11 +63,36 @@ export default function GovFlowApp() {
     if (el.scrollHeight - el.scrollTop - el.clientHeight < 500) bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [sig]);
 
+  const [target, setTarget] = useState("");
+  const [upErr, setUpErr] = useState<string | null>(null);
+
+  /** Files (+ optional message) go to /api/upload; the agent opens or resumes a case from them. */
+  const uploadFiles = async (text?: string) => {
+    setUpErr(null);
+    const fd = new FormData();
+    files.forEach((f) => fd.append("files", f));
+    fd.append("lang", lang);
+    if (target) fd.append("caseId", target);
+    if (text?.trim()) fd.append("text", text.trim());
+    try {
+      const r = await fetch("/api/upload", { method: "POST", body: fd });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) setUpErr(j.error ?? `HTTP ${r.status}`);
+      else {
+        setFiles([]);
+        setTarget("");
+      }
+    } catch (e) {
+      setUpErr(String(e));
+    }
+  };
+
   const send = async (text: string) => {
-    if (!text.trim() || busy) return;
+    if (busy || (!text.trim() && !files.length)) return;
     setBusy(true);
     try {
-      await post("/api/command", { text });
+      if (files.length) await uploadFiles(text);
+      else await post("/api/command", { text });
     } finally {
       setBusy(false);
     }
@@ -119,8 +144,8 @@ export default function GovFlowApp() {
           <div ref={bottomRef} className="h-2" />
         </div>
       </div>
-      {files.length > 0 && <UploadTray files={files} setFiles={setFiles} cases={feed.cases} />}
-      <Composer onSend={send} busy={busy} onPickFiles={addFiles} suggestions={[t("處理收件匣的新申請", "Process new applications"), t("哪些案件需要我決定？", "What needs my decision?"), t("為什麼 C-003 要轉人工？", "Why was C-003 escalated?"), t("總結今天的處理結果", "Summarise today")]} />
+      {files.length > 0 && <UploadTray files={files} setFiles={setFiles} cases={feed.cases} target={target} setTarget={setTarget} busy={busy} err={upErr} onUpload={() => send("")} />}
+      <Composer onSend={send} busy={busy} hasFiles={files.length > 0} onPickFiles={addFiles} suggestions={[t("處理收件匣的新申請", "Process new applications"), t("哪些案件需要我決定？", "What needs my decision?"), t("為什麼 C-003 要轉人工？", "Why was C-003 escalated?"), t("總結今天的處理結果", "Summarise today")]} />
     </div>
   );
 }
@@ -804,12 +829,12 @@ function EvidenceList({ c }: { c: CaseRecord }) {
 
 /* --------------------------------- composer -------------------------------- */
 
-function Composer({ onSend, busy, suggestions, onPickFiles }: { onSend: (t: string) => void; busy: boolean; suggestions: string[]; onPickFiles: (f: FileList | null) => void }) {
+function Composer({ onSend, busy, suggestions, onPickFiles, hasFiles }: { onSend: (t: string) => void; busy: boolean; suggestions: string[]; onPickFiles: (f: FileList | null) => void; hasFiles: boolean }) {
   const { t } = usePrefs();
   const [text, setText] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const submit = () => {
-    if (!text.trim()) return;
+    if (!text.trim() && !hasFiles) return;
     onSend(text);
     setText("");
   };
@@ -848,10 +873,10 @@ function Composer({ onSend, busy, suggestions, onPickFiles }: { onSend: (t: stri
               }
             }}
             rows={1}
-            placeholder={t("告訴 GovFlow 要做什麼…", "Tell GovFlow what to do…")}
+            placeholder={hasFiles ? t("說明這些檔案，例如：這位要申請 AI 補助，幫我跑", "Say what these are, e.g. \"this applicant wants the AI subsidy — run it\"") : t("告訴 GovFlow 要做什麼…", "Tell GovFlow what to do…")}
             className="max-h-40 flex-1 resize-none bg-transparent py-1.5 text-[16px] outline-none placeholder:text-ink-3"
           />
-          <button onClick={submit} disabled={busy || !text.trim()} className="grid h-9 w-9 place-items-center rounded-full bg-ink text-paper disabled:opacity-30" aria-label={t("送出", "Send")}>
+          <button onClick={submit} disabled={busy || (!text.trim() && !hasFiles)} className="grid h-9 w-9 place-items-center rounded-full bg-ink text-paper disabled:opacity-30" aria-label={t("送出", "Send")}>
             {busy ? <Loader2 size={16} className="animate-spin" /> : <ArrowUp size={16} />}
           </button>
         </div>
@@ -862,33 +887,12 @@ function Composer({ onSend, busy, suggestions, onPickFiles }: { onSend: (t: stri
 
 /* --------------------------------- upload ---------------------------------- */
 
-function UploadTray({ files, setFiles, cases }: { files: File[]; setFiles: (f: File[]) => void; cases: CaseRecord[] }) {
-  const { t, lang } = usePrefs();
+function UploadTray({ files, setFiles, cases, target, setTarget, busy, err, onUpload }: { files: File[]; setFiles: (f: File[]) => void; cases: CaseRecord[]; target: string; setTarget: (v: string) => void; busy: boolean; err: string | null; onUpload: () => void }) {
+  const { t } = usePrefs();
   const targets = cases.filter((c) => c.status === "awaiting_correction" || c.status === "awaiting_human");
-  const [target, setTarget] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
   const total = files.reduce((n, f) => n + f.size, 0);
   const tooBig = total > 4 * 1024 * 1024;
-
-  const upload = async () => {
-    setBusy(true);
-    setErr(null);
-    const fd = new FormData();
-    files.forEach((f) => fd.append("files", f));
-    fd.append("lang", lang);
-    if (target) fd.append("caseId", target);
-    try {
-      const r = await fetch("/api/upload", { method: "POST", body: fd });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) setErr(j.error ?? `HTTP ${r.status}`);
-      else setFiles([]);
-    } catch (e) {
-      setErr(String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const upload = onUpload;
 
   return (
     <div className="border-t border-line bg-card">
