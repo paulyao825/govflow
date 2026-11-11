@@ -83,7 +83,20 @@ export const DOC_TYPES: RequiredDoc[] = [
   { id: "low_income_proof", label: "低收／中低收入戶證明", description: "Low-income household certificate", required: "conditional" },
 ];
 
-export const docLabel = (id: string) => DOC_TYPES.find((d) => d.id === id)?.label ?? "無法辨識";
+const DOC_EN: Record<string, string> = {
+  application_form: "Application form",
+  household_record: "Household registration",
+  student_status: "Enrolment / graduation proof",
+  ai_course_proof: "AI course transcript",
+  ai_course_teacher_cert: "Instructor letter (AI course)",
+  subscription_receipt: "AI subscription receipt",
+  bank_receipt: "Receipt form + passbook",
+  usage_reflection: "Usage essay",
+  self_checklist: "Self-check list",
+  low_income_proof: "Low-income certificate",
+};
+export const docLabel = (id: string, lang: "en" | "zh" = "zh") =>
+  lang === "en" ? (DOC_EN[id] ?? "Unrecognised") : (DOC_TYPES.find((d) => d.id === id)?.label ?? "無法辨識");
 
 export const SUBSIDY_PERIOD = { start: "2026-08-01", end: "2026-10-31" };
 export const FINAL_DEADLINE = "2026-11-10";
@@ -93,7 +106,9 @@ export const PRC_TOOLS = ["capcut", "kling", "meitu", "美圖秀秀", "wink", "w
 export const youthAiSubsidyWorkflow = {
   id: "taipei_youth_ai_subsidy_2026",
   name: "臺北市青年 AI 工具補助（115年度）",
+  nameEn: "Taipei Youth AI Tool Subsidy (2026)",
   agency: "臺北市政府青年局 職涯支援科",
+  agencyEn: "Taipei City Youth Department, Career Support Section",
   sopReference: "P49000012",
   trigger: "new_application",
   statutoryTimeline: { intake: "1日", review: "25日", reply: "2日", total: "28日（日曆日）" },

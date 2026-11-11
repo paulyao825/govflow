@@ -11,6 +11,7 @@ export class GuardrailError extends Error {}
 export interface RunCtx {
   runId: string;
   caseId?: string;
+  lang: import("./i18n").Lang;
 }
 
 const STEP_DELAY = Number(process.env.DEMO_STEP_DELAY_MS ?? 450);
@@ -50,7 +51,7 @@ export async function runTool<T>(
     await logEvent(ctx, {
       tool: meta.tool,
       step: meta.step,
-      title: `已阻擋：${meta.tool} 需要「${meta.permission}」權限，僅限人工執行`,
+      title: ctx.lang === "zh" ? `已阻擋：${meta.tool} 需要「${meta.permission}」權限，僅限人工執行` : `Blocked: ${meta.tool} needs "${meta.permission}", which is human-only`,
       status: "error",
     });
     throw new GuardrailError(`permission ${meta.permission} is human-only`);

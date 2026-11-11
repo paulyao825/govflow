@@ -124,7 +124,8 @@ const firestoreBackend: Backend = {
   },
 };
 
-export const db: Backend = process.env.FIREBASE_SERVICE_ACCOUNT_B64 ? firestoreBackend : memoryBackend;
+// GOVFLOW_STORE=memory forces the in-memory store (e.g. a local demo, or when the Firestore quota is exhausted)
+export const db: Backend = process.env.FIREBASE_SERVICE_ACCOUNT_B64 && process.env.GOVFLOW_STORE !== "memory" ? firestoreBackend : memoryBackend;
 
 export async function readFeed(): Promise<Feed> {
   const [cases, events, tasks, messages, outbox] = await Promise.all([

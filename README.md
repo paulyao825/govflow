@@ -10,6 +10,8 @@ YC Request for Startups: AI for City Hall. The first workflow is Taipei City's *
 
 ## What the officer sees
 
+English by default, with an **EN / 中** switch and a **light / dark** switch in the header. The agent writes its messages, rules, and drafts in the selected language. Official clause quotations stay in the original Chinese. The layout is designed for a desktop screen.
+
 One conversation thread. No sidebar, no dashboard, nothing new to learn.
 
 - **The agent speaks first.** When applications arrive (mailroom scan, counter, online), the event triggers the agent. It processes each case and posts a message such as *"A-001: I've gone through it. The AI course certificate is missing, and I've drafted the correction notice."*
@@ -67,7 +69,9 @@ pnpm test                    # deterministic rule tests
 pnpm typecheck && pnpm lint && pnpm build
 ```
 
-In the UI, open **⋯ → 重置展示**, then **夜間郵件：3 件申請進件**.
+In the UI, open **⋯ → Reset demo**, then **Overnight mail: 3 applications arrive**.
+
+For a live demo, running locally with `GOVFLOW_STORE=memory` is the most robust option: single process, no database quota.
 
 ## Deploy
 

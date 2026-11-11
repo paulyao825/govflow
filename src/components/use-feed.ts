@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import type { Feed } from "@/lib/types";
+import { getLang } from "./ui-prefs";
 
 export interface Meta {
   jev: "jev" | "simulated";
@@ -75,6 +76,6 @@ export function useFeed() {
 }
 
 export async function post(url: string, body?: unknown) {
-  const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body ?? {}) });
+  const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ lang: getLang(), ...((body as object) ?? {}) }) });
   return r.json().catch(() => ({}));
 }

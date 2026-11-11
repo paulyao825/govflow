@@ -21,13 +21,19 @@ const WRITER_SYSTEM = `你是臺北市政府青年局承辦人員的公文撰寫
 - 不得表示案件已核准或駁回；所有內容都是「草稿」，需經承辦人核可。
 - 不要使用 Markdown 標題符號，可用「一、二、三」條列。`;
 
-export async function writeDraft(task: string, facts: unknown): Promise<{ text: string; source: "llm" | "template" } | null> {
+const WRITER_SYSTEM_EN = `You draft documents for a case officer at the Taipei City Youth Department.
+- Plain, polite, concise English. This is an English rendering for review; the official notice would be issued in Traditional Chinese.
+- Use ONLY the structured case facts and official clause citations provided. Never add rules, conditions or promises.
+- Never say the application is approved or rejected. Everything is a DRAFT for the officer to approve.
+- No Markdown headings.`;
+
+export async function writeDraft(task: string, facts: unknown, lang: "en" | "zh" = "zh"): Promise<{ text: string; source: "llm" | "template" } | null> {
   if (llmMode() === "fallback") return null;
   try {
     const r = await openai().chat.completions.create({
       model: LLM_MODEL,
       messages: [
-        { role: "system", content: WRITER_SYSTEM },
+        { role: "system", content: lang === "en" ? WRITER_SYSTEM_EN : WRITER_SYSTEM },
         { role: "user", content: `${task}\n\n<structured_case_facts>\n${JSON.stringify(facts, null, 2)}\n</structured_case_facts>` },
       ],
     });

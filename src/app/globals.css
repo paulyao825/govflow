@@ -20,6 +20,25 @@
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 }
 
+.dark {
+  --color-paper: #0e0f12;
+  --color-card: #17181c;
+  --color-ink: #ececef;
+  --color-ink-2: #b3b5bd;
+  --color-ink-3: #7d808a;
+  --color-line: #2b2d33;
+  --color-line-2: #212328;
+  --color-accent: #8e88ff;
+  --color-accent-soft: rgb(142 136 255 / 0.14);
+  --color-ok: #4ade80;
+  --color-ok-soft: rgb(74 222 128 / 0.12);
+  --color-warn: #fbbf24;
+  --color-warn-soft: rgb(251 191 36 / 0.12);
+  --color-bad: #f87171;
+  --color-bad-soft: rgb(248 113 113 / 0.12);
+  color-scheme: dark;
+}
+
 html,
 body {
   background: var(--color-paper);
@@ -35,7 +54,7 @@ body {
   height: 6px;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: #d9d9d4;
+  background: var(--color-line);
   border-radius: 3px;
 }
 

@@ -1,5 +1,6 @@
 // Deterministic parsing + eligibility rules. Pure functions (no I/O) so they are unit-testable.
 import type { CaseDocument, CaseFacts, DocTypeId, RuleResult } from "./types";
+import { L, type Lang } from "./i18n";
 import { CITES, FINAL_DEADLINE, PRC_TOOLS, SUBSIDY_PERIOD } from "./workflows/youth-ai-subsidy";
 
 const kv = (text: string, key: string) => text.match(new RegExp(`${key}[：:]\\s*(.+)`))?.[1]?.trim();
@@ -107,74 +108,77 @@ export function eligibleCycles(t: CaseFacts["tools"][number]) {
   return out;
 }
 
-export function evaluateRules(f: CaseFacts, docs: CaseDocument[]): { rules: RuleResult[]; suggestedAmount?: number } {
+export function evaluateRules(f: CaseFacts, docs: CaseDocument[], lang: Lang = "zh"): { rules: RuleResult[]; suggestedAmount?: number } {
   const R: RuleResult[] = [];
   const add = (r: RuleResult) => R.push(r);
+  const t_ = (zh: string, en: string) => L(lang, zh, en);
   const appDate = f.applicationDate;
 
   // 年齡
+  const ageTitle = t_("年齡 18–35 歲（以申請日計）", "Age 18–35 on application date");
   if (f.birthDate && appDate) {
     const age = ageOn(f.birthDate, appDate);
-    add({ id: "age", title: "年齡 18–35 歲（以申請日計）", result: age >= 18 && age <= 35 ? "pass" : "fail", detail: `申請日 ${appDate} 時 ${age} 歲`, citation: CITES.eligibilityAge });
-  } else add({ id: "age", title: "年齡 18–35 歲（以申請日計）", result: "unknown", detail: "缺出生日期或申請日期", citation: CITES.eligibilityAge });
+    add({ id: "age", title: ageTitle, result: age >= 18 && age <= 35 ? "pass" : "fail", detail: t_(`申請日 ${appDate} 時 ${age} 歲`, `${age} years old on ${appDate}`), citation: CITES.eligibilityAge });
+  } else add({ id: "age", title: ageTitle, result: "unknown", detail: t_("缺出生日期或申請日期", "Birth date or application date missing"), citation: CITES.eligibilityAge });
 
   // 設籍
+  const resTitle = t_("設籍臺北市滿 6 個月", "Registered in Taipei ≥ 6 months");
   if (f.registeredSince && appDate) {
     const ok = addMonths(f.registeredSince, 6) <= appDate;
-    add({ id: "residence", title: "設籍臺北市滿 6 個月", result: ok ? "pass" : "fail", detail: `遷入日期 ${f.registeredSince}`, citation: CITES.eligibilityAge });
-  } else add({ id: "residence", title: "設籍臺北市滿 6 個月", result: "unknown", detail: "戶籍文件無法判讀遷入日期", citation: CITES.eligibilityAge });
+    add({ id: "residence", title: resTitle, result: ok ? "pass" : "fail", detail: t_(`遷入日期 ${f.registeredSince}`, `Moved in ${f.registeredSince}`), citation: CITES.eligibilityAge });
+  } else add({ id: "residence", title: resTitle, result: "unknown", detail: t_("戶籍文件無法判讀遷入日期", "Move-in date unreadable on household record"), citation: CITES.eligibilityAge });
 
   // 學籍
   const stu = byType(docs, "student_status")[0]?.text ?? "";
-  add({ id: "student", title: "大專院校學籍或 115 年度應屆畢業", result: /在學|115年|中華民國115/.test(stu) ? "pass" : "unknown", detail: stu ? stu.split("\n")[0] : "未提供", citation: CITES.student });
+  add({ id: "student", title: t_("大專院校學籍或 115 年度應屆畢業", "Enrolled student or 2026 graduate"), result: /在學|115年|中華民國115/.test(stu) ? "pass" : "unknown", detail: stu ? stu.split("\n")[0] : t_("未提供", "Not provided"), citation: CITES.student });
 
   // 課程
-  if (!f.courseName) add({ id: "course", title: "AI 相關課程修習證明", result: "fail", detail: "未檢附課程修習證明", citation: CITES.course });
-  else if (courseNamedAI(f.courseName)) add({ id: "course", title: "AI 相關課程修習證明", result: "pass", detail: `課程「${f.courseName}」名稱含 AI／人工智慧`, citation: CITES.course });
+  const courseTitle = t_("AI 相關課程修習證明", "Proof of an AI-related course");
+  if (!f.courseName) add({ id: "course", title: courseTitle, result: "fail", detail: t_("未檢附課程修習證明", "No course transcript submitted"), citation: CITES.course });
+  else if (courseNamedAI(f.courseName)) add({ id: "course", title: courseTitle, result: "pass", detail: t_(`課程「${f.courseName}」名稱含 AI／人工智慧`, `Course "${f.courseName}" is named as AI`), citation: CITES.course });
   else
     add({
       id: "course",
-      title: "AI 相關課程修習證明",
+      title: courseTitle,
       result: byType(docs, "ai_course_teacher_cert").length ? "unknown" : "fail",
-      detail: `課程「${f.courseName}」名稱未含 AI 字樣，需教師證明書並判斷內容是否涉及 AI`,
+      detail: t_(`課程「${f.courseName}」名稱未含 AI 字樣，需教師證明書並判斷內容是否涉及 AI`, `Course "${f.courseName}" is not named as AI — needs an instructor letter and a judgment on whether it covers AI`),
       citation: CITES.courseCert,
     });
 
   // 工具數
-  add({ id: "max_tools", title: "最多 2 項 AI 工具", result: f.tools.length <= 2 ? "pass" : "fail", detail: `申請 ${f.tools.length} 項`, citation: CITES.maxTools });
+  add({ id: "max_tools", title: t_("最多 2 項 AI 工具", "At most 2 AI tools"), result: f.tools.length <= 2 ? "pass" : "fail", detail: t_(`申請 ${f.tools.length} 項`, `${f.tools.length} claimed`), citation: CITES.maxTools });
 
   let amount = 0;
   let amountKnown = true;
   for (const t of f.tools) {
-    const name = t.name || "AI 工具";
-    // 中國大陸工具
+    const name = t.name || t_("AI 工具", "AI tool");
     const prc = PRC_TOOLS.some((p) => name.toLowerCase().includes(p));
-    add({ id: `prc_${t.source}`, title: `${name}：非中國大陸開發工具`, result: prc ? "fail" : "pass", detail: prc ? "列於不予補助名單" : "未列於不予補助名單", citation: CITES.prc });
-    // 個人版
+    add({ id: `prc_${t.source}`, title: t_(`${name}：非中國大陸開發工具`, `${name}: not a PRC-developed tool`), result: prc ? "fail" : "pass", detail: prc ? t_("列於不予補助名單", "On the excluded list") : t_("未列於不予補助名單", "Not on the excluded list"), citation: CITES.prc });
     const shared = /家庭|family|企業|enterprise|team|business/i.test(t.plan ?? "");
     const personal = /個人|individual/i.test(t.plan ?? "");
     add({
       id: `personal_${t.source}`,
-      title: `${name}：個人使用版本`,
+      title: t_(`${name}：個人使用版本`, `${name}: personal plan`),
       result: shared ? "unknown" : personal ? "pass" : "unknown",
-      detail: shared ? `收據顯示「${t.plan}」，是否屬多人共用版本需判斷` : personal ? "收據標示個人方案" : "收據未標示方案類型",
+      detail: shared ? t_(`收據顯示「${t.plan}」，是否屬多人共用版本需判斷`, `Receipt shows "${t.plan}" — whether this counts as a shared plan needs judgment`) : personal ? t_("收據標示個人方案", "Receipt says individual plan") : t_("收據未標示方案類型", "Plan type not stated"),
       citation: CITES.personal,
     });
-    // 購買人
-    add({ id: `purchaser_${t.source}`, title: `${name}：購買人為申請人本人`, result: t.purchaser && t.purchaser === f.applicantName ? "pass" : "unknown", detail: `購買人：${t.purchaser ?? "未載明"}`, citation: CITES.purchaser });
+    add({ id: `purchaser_${t.source}`, title: t_(`${name}：購買人為申請人本人`, `${name}: purchased by the applicant`), result: t.purchaser && t.purchaser === f.applicantName ? "pass" : "unknown", detail: t_(`購買人：${t.purchaser ?? "未載明"}`, `Purchaser: ${t.purchaser ?? "not stated"}`), citation: CITES.purchaser });
 
-    // 期間
     const months = eligibleMonths(t);
     const conflict = !!(f.declaredStart && t.cycleStart && f.declaredStart !== t.cycleStart);
     if (!t.cycleStart) {
-      add({ id: `period_${t.source}`, title: `${name}：訂閱週期在補助期間內`, result: "unknown", detail: "無法判讀訂閱週期", citation: CITES.period });
+      add({ id: `period_${t.source}`, title: t_(`${name}：訂閱週期在補助期間內`, `${name}: billing cycle inside Aug 1 – Oct 31`), result: "unknown", detail: t_("無法判讀訂閱週期", "Billing cycle unreadable"), citation: CITES.period });
       amountKnown = false;
     } else if (t.billing === "annual") {
       add({
         id: `period_${t.source}`,
-        title: `${name}：年訂閱以月折算之週期在補助期間內`,
+        title: t_(`${name}：年訂閱以月折算之週期在補助期間內`, `${name}: annual plan, pro-rated months inside the period`),
         result: conflict || t.cycleStart < SUBSIDY_PERIOD.start ? "unknown" : months >= 1 ? "pass" : "fail",
-        detail: `收據訂閱日 ${t.cycleStart}${conflict ? `，申請書填寫 ${f.declaredStart}（不一致）` : ""}；依收據折算可認列 ${months} 個月`,
+        detail: t_(
+          `收據訂閱日 ${t.cycleStart}${conflict ? `，申請書填寫 ${f.declaredStart}（不一致）` : ""}；依收據折算可認列 ${months} 個月`,
+          `Receipt date ${t.cycleStart}${conflict ? `, form says ${f.declaredStart} (conflict)` : ""}; ${months} eligible month(s) per receipt`,
+        ),
         citation: CITES.annual,
       });
       if (conflict) amountKnown = false;
@@ -183,27 +187,25 @@ export function evaluateRules(f: CaseFacts, docs: CaseDocument[]): { rules: Rule
       const inside = t.cycleStart >= SUBSIDY_PERIOD.start && !!t.cycleEnd && t.cycleEnd <= SUBSIDY_PERIOD.end;
       add({
         id: `period_${t.source}`,
-        title: `${name}：月訂閱週期起訖均在 8/1–10/31`,
+        title: t_(`${name}：月訂閱週期起訖均在 8/1–10/31`, `${name}: monthly cycle starts and ends within Aug 1 – Oct 31`),
         result: conflict ? "unknown" : inside ? "pass" : "fail",
-        detail: `${t.cycleStart} ~ ${t.cycleEnd ?? "?"}${conflict ? `；申請書填寫 ${f.declaredStart}（不一致）` : ""}`,
+        detail: `${t.cycleStart} ~ ${t.cycleEnd ?? "?"}${conflict ? t_(`；申請書填寫 ${f.declaredStart}（不一致）`, `; form says ${f.declaredStart} (conflict)`) : ""}`,
         citation: CITES.monthly,
       });
       if (conflict) amountKnown = false;
       if (inside) amount += t.amount ?? 0;
     }
-    add({ id: `month_${t.source}`, title: `${name}：訂閱週期滿 1 個月`, result: months >= 1 ? "pass" : "fail", detail: `可認列 ${months} 個月`, citation: CITES.underMonth });
+    add({ id: `month_${t.source}`, title: t_(`${name}：訂閱週期滿 1 個月`, `${name}: at least one full month`), result: months >= 1 ? "pass" : "fail", detail: t_(`可認列 ${months} 個月`, `${months} eligible month(s)`), citation: CITES.underMonth });
 
-    // 申請期限
     if (appDate && t.cycleStart) {
       const lastMet = eligibleCycles(t).at(-1)?.end ?? t.cycleEnd ?? appDate;
       const limit = [addMonths(addDays(lastMet, 1), 1), FINAL_DEADLINE].sort()[0];
-      add({ id: `deadline_${t.source}`, title: `${name}：於期限內提出申請`, result: appDate <= limit ? "pass" : "fail", detail: `申請日 ${appDate}；期限 ${limit}`, citation: CITES.deadline });
+      add({ id: `deadline_${t.source}`, title: t_(`${name}：於期限內提出申請`, `${name}: applied before the deadline`), result: appDate <= limit ? "pass" : "fail", detail: t_(`申請日 ${appDate}；期限 ${limit}`, `Applied ${appDate}; deadline ${limit}`), citation: CITES.deadline });
     }
   }
 
-  // 心得字數
   const need = 300 * Math.max(1, f.tools.length);
-  add({ id: "reflection", title: `使用心得每項至少 300 字`, result: (f.reflectionChars ?? 0) >= need ? "pass" : "fail", detail: `共 ${f.reflectionChars ?? 0} 字（需 ${need} 字）`, citation: CITES.reflection });
+  add({ id: "reflection", title: t_("使用心得每項至少 300 字", "Usage essay ≥ 300 characters per tool"), result: (f.reflectionChars ?? 0) >= need ? "pass" : "fail", detail: t_(`共 ${f.reflectionChars ?? 0} 字（需 ${need} 字）`, `${f.reflectionChars ?? 0} characters (needs ${need})`), citation: CITES.reflection });
 
   const cap = f.lowIncome ? 8000 : 4000;
   return { rules: R, suggestedAmount: amountKnown ? Math.min(amount, cap) : undefined };
